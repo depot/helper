@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,6 +21,8 @@ import (
 	"sync"
 	"sync/atomic"
 )
+
+const Version = 3
 
 func main() {
 	rawConfig, err := base64.StdEncoding.DecodeString(os.Getenv("CONFIG"))
@@ -34,6 +37,12 @@ func main() {
 
 	var manifest Manifest
 	err = json.Unmarshal(rawManifest, &manifest)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Bind to port before sending the version-alive byte.
+	ln, err := net.Listen("tcp", ":8888")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,8 +77,14 @@ func main() {
 		close(idleConnsClosed)
 	}()
 
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatalf("HTTP server ListenAndServe: %v", err)
+	// Report that network and transport are ready.
+	_, err = os.Stderr.Write([]byte{Version})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := srv.Serve(ln); err != http.ErrServerClosed {
+		log.Fatalf("HTTP server: %v", err)
 	}
 
 	<-idleConnsClosed
